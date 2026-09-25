@@ -80,14 +80,17 @@ CORPORATE_REMOVE = [  # corporate-owned chains and private-equity platforms: rem
     "hometown services", "legacy service partners", "southern hvac", "heartland home", "frontdoor",
     "american residential", "comfort systems", "1-800", "1800", "hvac.com", "sila heating", "sila services",
     "cool today", "plumbing today", "one hour air conditioning & heating of", "unique indoor comfort",
-    "homex", "nexstar", "arco ", "arcoair", "abc home", "abc plumbing", "four seasons heating",
+    "homex", "nexstar", "arco ", "arcoair", "abc home", "abc plumbing", "four seasons heating", "dabella",
+    "renewal by andersen", "west shore home", "long home", "windows usa", "1-800-hansons", "hansons", "feldco",
+    "pella", "andersen", "power home", "champion", "leafguard", "thompson creek", "mad city", "k designers",
 ]
 FRANCHISE = [  # franchise brands: kept when the location is locally owned, but flagged and penalised
     "mr. rooter", "mr rooter", "zoom drain", "rooter-man", "rooterman", "bluefrog", "benjamin franklin", "one hour",
     "mister sparky", "mr. electric", "mr electric", "aire serv", "aireserv", "neighborly", "precision door",
     "dr. roof", "roof maxx", "roofmaxx", "mighty dog roofing", "handyman connection", "mr. handyman", "1 tom plumber",
     "pink plumber", "the plumbing pros", "hoffmann brothers", "wire wiz", "electricians on call", "lightning bug",
-    "captain electric", "storm guard", "roof squad", "moxie", "gold medal", "grounds guys", "wireman",
+    "captain electric", "storm guard", "roof squad", "moxie", "gold medal", "grounds guys", "wireman", "temperaturepro",
+    "temperature pro",
 ]
 ACQUIRED_RE = re.compile(r"(was |been |were )?acquired by|acquisition by|private[- ]equity|sold to |owned by [^;]*(group|partners|"
                          r"holdings|capital)|part of the [^;]* group|portfolio company|backed by", re.I)
@@ -107,7 +110,12 @@ BLOCK_DOMAINS = (
     "hvacrepair", "yellowpagecity", "usaroofers", "roofingcontractor.", "mapsconnect", "cityfos", "bizhwy", "salespider",
     "companieshub", "callupcontact", "trustanalytica", "prolocalservices", "top10", "bestprosintown", "hubbiz", "loc8nearme",
     "hvacservice.io", "plumbingservice.io", "roofingservice.io", "electricservice.io", "servicepros", "homeflow", "nearby",
+    "trane.com", "lennox.com", "carrier.com", "americanstandardair", "rheem.com", "goodman", "bryant.com", "daikin",
+    "guildquality", "voolt", "tydl.io", "searchaplumber", "hvacloc", "prosforhome", "omaha-ne.com", "gaf.com", "owenscorning",
+    "certainteed", "servicequoteai", "reputation.", "topservdigital", "bwpsites", "memberzone", "patch.com", "nextdoor",
+    "alignable", "yellowpages", "bizapedia", "chamberofcommerce", "valuenews", "kompass", "localz", "wheree", "homeyou",
 )
+REGIONAL_CHAIN = ["paschal", "shamrock roofing", "dabella"]   # multi-state operators: branch can't buy locally
 GENERIC_TOKENS = {"roofing", "roofers", "roofer", "roof", "roofs", "plumbing", "plumber", "plumbers", "electric", "electrical",
                   "electricians", "electrician", "hvac", "heating", "cooling", "air", "conditioning", "service", "services",
                   "home", "homes", "pros", "solutions", "company", "companies", "contractors", "contractor", "construction",
@@ -476,12 +484,12 @@ def merge_cards(out, cities=None):
 
 def is_franchise(name):
     n = " " + name.lower() + " "
-    return any(f in n for f in FRANCHISE)
+    return any(f and f in n for f in FRANCHISE)
 
 
 def is_corporate(name):
     n = " " + name.lower() + " "
-    return any(f in n for f in CORPORATE_REMOVE)
+    return any(f and f in n for f in CORPORATE_REMOVE)
 
 
 OWNER_TITLES = re.compile(r"owner|founder|president|principal|proprietor|general manager|managing", re.I)
@@ -575,6 +583,9 @@ def score(b):
         s -= 8; flags.append("no verified business line: look up before calling")
     if is_franchise(b["name"]):
         s -= 8; flags.append("franchise brand: confirm the local owner can buy")
+    n = " " + b["name"].lower() + " "
+    if any(x and x in n for x in REGIONAL_CHAIN) or len(b.get("metros", [])) >= 2:
+        s -= 8; flags.append("multi-city / multi-state operator: the local office may not make the buying decision")
     exclude = ""
     if is_corporate(b["name"]):
         exclude = "corporate-owned chain / national operator"
@@ -987,6 +998,17 @@ def build_rows(a):
         if e.get("website") and not site_matches(b["name"], e["website"], e.get("site_title", "")):
             e["notes"] = (e.get("notes", "") + f"; website candidate {e['website']} not verified").strip("; ")
             e["website"] = ""
+        if e.get("owner"):
+            m = re.match(r"^(.*?)[\s,]+(Owner|President|Founder|CEO|Co-Owner|General Manager)$", e["owner"].strip(), re.I)
+            if m:
+                e["owner"], e["title"] = m.group(1).strip(" ,"), (e.get("title") or m.group(2))
+        # a website-sourced phone with a non-local area code usually means a same-named company elsewhere
+        ac = digits(e.get("phone", ""))[:3]
+        if ac and ac not in AREA_CODES.get(b["state"], set()) and e.get("phone_source", "").startswith("website"):
+            e["notes"] = (e.get("notes", "") + f"; dropped {e['website']} / {e['phone']}: same-named company in another state").strip("; ")
+            e["phone"], e["phone_source"], e["website"] = "", "", ""
+            if e.get("owner_source", "").startswith("http"):
+                e["owner"], e["title"], e["owner_source"] = "", "", ""
         b["weekly_hours"] = p.get("weekly_hours", {}); b["ownership"] = p.get("ownership", [])
         b["p"] = p; b["e"] = e
         score(b)
