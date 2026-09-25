@@ -1230,7 +1230,8 @@ def write_workbook(path, rows, removed, kept):
         ("Columns to use on a call: Phone (the company's own line), Owner, Title, Why this lead ranks highly, Red flags, Hours.", font),
         ("The column 'LSA display phone (DO NOT CALL - tracking number)' is the number inside the Google ad. Calling it bills the business for a lead. Evidence only.", bold),
         ("Verification: every row was captured from google.com/localservices/prolist (paying LSA advertisers only). Proof columns give the listing URL, profile URL, Google Ads customer ID, capture time and screenshot file in tools/lsa_leads/out/evidence/.", font),
-        ("Phone source tells where the business line came from: BBB listing, the company website (tel: link or page text), or the BBB-built lists already in the repo.", font),
+        ("Phone source tells where the business line came from: BBB listing, the company website (tel: link or page text), the BBB-built lists already in the repo, or a hand-verified site.", font),
+        (f"Hours (ad status) is the hours line shown in the ad at capture time and is present for every row; Weekly hours comes from the LSA profile page and is filled for {sum(1 for r in rows if r.get('Weekly hours'))} of {len(rows)} delivered rows (the profile pass is slow and runs top-down).", font),
         ("Ranking: independent, established, 150-3,000 reviews, owner still involved, 24-hour or late phones, verified website and phone score highest. Corporate chains, private-equity-owned and acquired companies are removed; franchises and 5,000+ review operations are kept but penalised.", font),
     ]
     for i, (t, f) in enumerate(lines, 1):
