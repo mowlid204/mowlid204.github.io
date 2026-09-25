@@ -75,11 +75,11 @@ TRADES = {  # first term is the primary one, also used for suburb queries
 CORPORATE_REMOVE = [  # corporate-owned chains and private-equity platforms: removed from the list
     "service experts", "ars ", "ars/", "rescue rooter", "roto-rooter", "roto rooter", "erie home", "erie metal",
     "power home", "leaffilter", "leaf filter", "leafguard", "window world", "champion window", "bath fitter", "re-bath",
-    "sears", "lowe's", "home depot", "homeserve", "apex service", "wrench group", "goettl", "any hour", "anyhour",
+    "sears", "lowe's", "home depot", "homeserve", "apex service partners", "wrench group", "goettl", "any hour", "anyhour",
     "redwood services", "turnpoint", "horizon services", "morris-jenkins", "ace hardware", "ace home services",
     "hometown services", "legacy service partners", "southern hvac", "heartland home", "frontdoor",
-    "american residential", "comfort systems", "1-800", "1800", "hvac.com", "sila heating", "sila services",
-    "cool today", "plumbing today", "one hour air conditioning & heating of", "unique indoor comfort",
+    "american residential", "comfort systems usa", "1-800", "1800", "hvac.com", "sila heating", "sila services",
+    "one hour air conditioning & heating of", "unique indoor comfort",
     "homex", "nexstar", "arco ", "arcoair", "abc home", "abc plumbing", "four seasons heating", "dabella",
     "renewal by andersen", "west shore home", "long home", "windows usa", "1-800-hansons", "hansons", "feldco",
     "pella", "andersen", "power home", "champion", "leafguard", "thompson creek", "mad city", "k designers",
@@ -99,7 +99,7 @@ BUTTONS = {"Get phone number", "Book", "Get quote", "Share", "Book online", "Cal
 BLOCK_DOMAINS = (
     "google.", "facebook.", "instagram.", "yelp.", "bbb.org", "yellowpages", "mapquest", "indeed.", "glassdoor",
     "angi.", "homeadvisor", "thumbtack", "houzz", "x.com", "twitter.", "youtube.", "tiktok.", "wikipedia",
-    "manta.", "dnb.com", "buzzfile", "chamberofcommerce", "birdeye", "nextdoor", "porch.", "bark.com",
+    "manta.", "dnb.com", "buzzfile", "chamberofcommerce", "birdeye", "nextdoor", "porch.", "bark.com", "projectmapit", "igolocal", "plumberssupply",
     "bing.", "duckduckgo", "pinterest", "reddit.", "opencorporates", "bizapedia", "buildzoom", "superpages",
     "citysearch", "foursquare", "trustpilot", "linkedin.", "zoominfo", "crunchbase", "apple.com", "yellowbook",
     "expertise.com", "threebestrated", "hometown", "nicelocal", "cylex", "brownbook", "localsearch", "findglocal",
@@ -865,6 +865,49 @@ def load_bbb_index():
     return idx_name, idx_phone
 
 
+def cmd_fixsites(a):
+    """For businesses whose override row names a website, fetch it and record the site phone / signals
+    (enriched_zz_manual.jsonl, read last so it wins) when the row has no phone yet."""
+    out = Path(a.out)
+    biz = merge_cards(out, a.cities)
+    have = read_enriched(out)
+    op = out / "owner_overrides.csv"
+    if not op.exists():
+        op = HERE / "data" / "owner_overrides.csv"
+    overrides = {}
+    with open(op, encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            overrides[(norm_name(r.get("Business", "")), (r.get("City") or "").lower())] = r
+    web = Web(out)
+    target = out / "enriched_zz_manual.jsonl"
+    done = {e["customer_id"] for e in read_jsonl(target)} if target.exists() else set()
+    n = 0
+    for b in biz.values():
+        ov = overrides.get((norm_name(b["name"]), b["primary_metro"].lower()))
+        if not ov or not (ov.get("Website") or "").strip() or b["customer_id"] in done:
+            continue
+        e = dict(have.get(b["customer_id"], {}))
+        w = ov["Website"].strip()
+        if not w.startswith("http"):
+            w = "https://" + w
+        same = e.get("website", "").rstrip("/").lower() == w.rstrip("/").lower()
+        if e.get("phone") and (same or not e.get("phone_source", "").startswith("website")):
+            continue                                            # already has a phone from BBB or this very site
+        info = site_contact(web, w)
+        row = {"customer_id": b["customer_id"], "name": b["name"], "website": w, "website_source": "hand-verified",
+               "site_title": info.get("site_title", ""), "site_signals": info.get("site_signals", "")}
+        if info.get("phone"):
+            row["phone"], row["phone_source"] = info["phone"], info["phone_source"] + " (hand-verified site)"
+        for k in ("bbb", "bbb_address", "years_bbb", "notes"):
+            if e.get(k):
+                row[k] = e[k]
+        with open(target, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        n += 1
+        log(f"  [{n}] {b['name']} ({b['primary_metro']}): {w} -> {row.get('phone', 'no phone on site')}")
+    log(f"fixsites: {n} sites fetched")
+
+
 def read_enriched(out):
     """All enrichment rows across shards (enriched.jsonl, enriched_<shard>.jsonl); later rows win."""
     rows = {}
@@ -989,9 +1032,20 @@ def build_rows(a):
         p = prof.get(b["customer_id"], {}); e = dict(enr.get(b["customer_id"], {}))
         ov = overrides.get((norm_name(b["name"]), b["primary_metro"].lower()))
         if ov:
-            if ov.get("Owner"):
+            if (ov.get("Owner") or "").strip() == "-":            # hand-checked: no owner name is published; drop any scraped guess
+                e["owner"], e["title"], e["owner_source"] = "", "", ""
+            elif ov.get("Owner"):
                 e["owner"] = ov["Owner"]; e["title"] = ov.get("Title", "") or e.get("title", "")
                 e["owner_source"] = ov.get("Source", "hand-verified")
+            if (ov.get("Website") or "").strip():                  # hand-verified website wins over the scraped candidate
+                w = ov["Website"].strip()
+                if not w.startswith("http"):
+                    w = "https://" + w
+                if e.get("website") and e["website"].rstrip("/").lower() != w.rstrip("/").lower() and e.get("phone_source", "").startswith("website"):
+                    e["phone"], e["phone_source"] = "", ""      # the phone came from the wrong site
+                e["website"], e["site_title"], e["website_source"] = w, b["name"], "hand-verified"
+            if (ov.get("Phone") or "").strip():
+                e["phone"], e["phone_source"] = fmt_phone(ov["Phone"]), "hand-verified (" + (ov.get("Source") or "web search") + ")"
             if ov.get("Note"):
                 b["override_note"] = ov["Note"]
             if ov.get("Exclude"):
@@ -1000,7 +1054,7 @@ def build_rows(a):
                 b["adjust"] = float(ov.get("Adjust") or 0)
             except ValueError:
                 b["adjust"] = 0
-        if e.get("website") and not site_matches(b["name"], e["website"], e.get("site_title", "")):
+        if e.get("website") and e.get("website_source") != "hand-verified" and not site_matches(b["name"], e["website"], e.get("site_title", "")):
             e["notes"] = (e.get("notes", "") + f"; website candidate {e['website']} not verified").strip("; ")
             e["website"] = ""
         if e.get("owner"):
@@ -1203,7 +1257,7 @@ def cmd_run(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["lists", "profiles", "enrich", "export", "run"])
+    ap.add_argument("cmd", choices=["lists", "profiles", "enrich", "fixsites", "export", "run"])
     ap.add_argument("--out", default=str(HERE / "out"))
     ap.add_argument("--cities", nargs="*", help="limit to these metro names, e.g. --cities Tulsa Omaha")
     ap.add_argument("--trades", nargs="*", help="limit to these trades: Roofing HVAC Plumbing Electrical")
@@ -1219,7 +1273,7 @@ def main(argv=None):
     if a.top == 0 and a.cmd in ("profiles", "enrich"):
         a.top = 10000
     Path(a.out).mkdir(parents=True, exist_ok=True)
-    {"lists": cmd_lists, "profiles": cmd_profiles, "enrich": cmd_enrich, "export": cmd_export, "run": cmd_run}[a.cmd](a)
+    {"lists": cmd_lists, "profiles": cmd_profiles, "enrich": cmd_enrich, "fixsites": cmd_fixsites, "export": cmd_export, "run": cmd_run}[a.cmd](a)
 
 
 if __name__ == "__main__":
