@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" data-campaign="pest">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pest Control Booking">
+<meta name="theme-color" content="#0f766e">
+<title>Pest Control Booking</title>
+<link rel="stylesheet" href="../../shared/app.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <a class="iconbtn" id="backToDialer" href="../dialer/" aria-label="Back to dialer">📞 Dialer</a>
+    <div class="brand" style="text-align:right"><span class="dot"></span>Pest Control <small>· Booking</small></div>
+  </header>
+  <main class="main" id="main"><noscript>This app needs JavaScript.</noscript></main>
+  <nav class="tabs">
+    <button data-view="calendar">📅 Calendar</button>
+    <button data-view="list">✅ Meetings<span class="count" id="tabCount"></span></button>
+    <button data-view="settings">⚙️ Settings</button>
+  </nav>
+</div>
+<script>window.APP = { campaign: 'pest', title: 'Pest Control' };</script>
+<script src="../leads.js"></script>
+<script src="../../shared/common.js"></script>
+<script src="../../shared/booking.js"></script>
+</body>
+</html>
