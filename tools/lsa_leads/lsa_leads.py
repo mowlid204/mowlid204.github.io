@@ -130,6 +130,8 @@ def site_matches(name, url, title, allow_domain=True):
     words = norm_name(name).split()
     toks = [t for t in words if len(t) >= 4 and t not in GENERIC_TOKENS]
     dom = urllib.parse.urlsplit(url).netloc.lower().replace("-", "")
+    if any(b.replace("-", "") in dom for b in BLOCK_DOMAINS):
+        return False                                   # known directory / dealer-locator / social domains
     if re.search(r"people|news|magazine|times|journal|tribune|gazette|herald|world|press|directory|guide|review|rated|"
                  r"nearme|pages|listing|listings|citation|profile|wiki|blog|forum|jobs|career|indeed|hba|association|members|chamber", dom):
         return False                                   # media / directory sites, even when they mention the name
@@ -976,6 +978,8 @@ def build_rows(a):
                 enr[b["customer_id"]] = enr[cid]
     overrides = {}
     op = out / "owner_overrides.csv"
+    if not op.exists():
+        op = HERE / "data" / "owner_overrides.csv"     # the hand-verified file committed with the tool
     if op.exists():
         with open(op, encoding="utf-8-sig", newline="") as f:
             for r in csv.DictReader(f):
