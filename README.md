@@ -6,8 +6,9 @@ Static web apps for cold-calling and booking meetings, hosted with GitHub Pages.
 |---|---|---|
 | Pest control (Alberta, 110 leads) | `/pest/dialer/` | `/pest/booking/` |
 | Roofing (US, 1,135 leads) | `/roofing/dialer/` | `/roofing/booking/` |
+| LinkedIn AI-intent (people asking about AI / missed calls on LinkedIn) | `/linkedin/dialer/` | `/linkedin/booking/` |
 
-The two campaigns are completely separate: separate lead files, separate saved outcomes, separate calendars.
+The campaigns are completely separate: separate lead files, separate saved outcomes, separate calendars.
 The dialer and booking app **within** one campaign share that campaign's lead outcomes, so marking a lead
 "Booked" in the dialer shows in its booking app and vice versa.
 
@@ -30,8 +31,19 @@ Everything is stored in the browser's `localStorage` on the device you use. Use 
 
 ## Updating a lead list
 ```
-python3 tools/build_leads.py pest    path/to/pest.csv
-python3 tools/build_leads.py roofing path/to/roofing.csv
+python3 tools/build_leads.py pest     path/to/pest.csv
+python3 tools/build_leads.py roofing  path/to/roofing.csv
+python3 tools/build_leads.py linkedin tools/linkedin_intent/out/dialer_import.csv
 ```
 The script reads the sheet's columns, adds a time zone per lead, and writes `<campaign>/leads.js`.
 You can also import a CSV directly in the dialer's ⋯ menu without touching the repo.
+
+## Finding LinkedIn intent leads
+`tools/linkedin_intent/` finds public LinkedIn posts where someone is asking about AI receptionists,
+answering services or missed calls, scores authors and commenters for buyer intent vs. vendor noise,
+looks up a phone number, and writes the CSV above. No LinkedIn login needed. See
+[`tools/linkedin_intent/README.md`](tools/linkedin_intent/README.md).
+```
+pip install -r tools/linkedin_intent/requirements.txt
+python3 tools/linkedin_intent/li_intent.py run
+```

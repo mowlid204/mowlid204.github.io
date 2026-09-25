@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" data-campaign="linkedin">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LinkedIn Dialer">
+<meta name="theme-color" content="#0a66c2">
+<title>LinkedIn Dialer</title>
+<link rel="stylesheet" href="../../shared/app.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>LinkedIn <small>· Dialer</small></div>
+    <button class="iconbtn" data-action="search" aria-label="Search leads">🔍</button>
+    <button class="iconbtn" data-action="callbacks" aria-label="Callbacks">⏰<span class="count" id="cbCount"></span></button>
+    <button class="iconbtn" data-action="filters" aria-label="Filters and settings">⚙️<span class="count" id="filterCount"></span></button>
+    <button class="iconbtn" data-action="more" aria-label="More">⋯</button>
+  </header>
+  <main class="main" id="main"><noscript>This app needs JavaScript.</noscript></main>
+</div>
+<script>window.APP = { campaign: 'linkedin', title: 'LinkedIn' };</script>
+<script src="../leads.js"></script>
+<script src="../../shared/common.js"></script>
+<script src="../../shared/dialer.js"></script>
+</body>
+</html>

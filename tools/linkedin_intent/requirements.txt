@@ -1,0 +1,6 @@
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+ddgs>=9.0
+# only for the optional logged-in discovery script (linkedin_login_search.py):
+# playwright>=1.45   (then run:  playwright install chromium)

@@ -1,0 +1,58 @@
+# One web search per line. Keep each one simple: `site:linkedin.com/posts` + one or two quoted
+# phrases + a plain word. Search engines silently return nothing for long OR-chains.
+# Lines starting with # are ignored. Add your own (city names, "Alberta", "Edmonton", etc).
+
+# --- asking about AI receptionists / phone answering ---
+site:linkedin.com/posts "AI receptionist" "anyone"
+site:linkedin.com/posts "AI receptionist" "recommend"
+site:linkedin.com/posts "AI receptionist" "thoughts"
+site:linkedin.com/posts "AI receptionist" "worth it"
+site:linkedin.com/posts "AI receptionist" "has anyone"
+site:linkedin.com/posts "AI receptionist" "we tried"
+site:linkedin.com/posts "AI receptionist" "should I"
+site:linkedin.com/posts "AI answering service" "anyone"
+site:linkedin.com/posts "AI answering" "recommendations"
+site:linkedin.com/posts "virtual receptionist" "recommendations"
+site:linkedin.com/posts "virtual receptionist" "anyone using"
+site:linkedin.com/posts "answering service" "recommend" contractor
+site:linkedin.com/posts "answering service" "looking for" HVAC
+site:linkedin.com/posts "answering service" "looking for" plumbing
+site:linkedin.com/posts "answering service" "looking for" roofing
+site:linkedin.com/posts "anyone using AI" "phones"
+site:linkedin.com/posts "anyone using AI" "answer calls"
+site:linkedin.com/posts "thinking about" "AI" "answer" "calls"
+site:linkedin.com/posts "AI" "answer the phone" "my business"
+site:linkedin.com/posts "AI" "answer the phone" owner
+site:linkedin.com/posts "AI" "answer calls" HVAC owner
+site:linkedin.com/posts "AI" "answer calls" roofing
+site:linkedin.com/posts "AI" "answer calls" plumbing
+site:linkedin.com/posts "AI" "phones" "electrical contractor"
+
+# --- describing the pain in first person ---
+site:linkedin.com/posts "missed calls" "our office"
+site:linkedin.com/posts "missed calls" "my business"
+site:linkedin.com/posts "missed calls" HVAC "we"
+site:linkedin.com/posts "missed call" roofing company
+site:linkedin.com/posts "missed calls" plumbing company
+site:linkedin.com/posts "after hours calls" roofing
+site:linkedin.com/posts "after hours calls" HVAC
+site:linkedin.com/posts "after hours calls" plumbing
+site:linkedin.com/posts "goes to voicemail" "our"
+site:linkedin.com/posts "voicemail" "customers" HVAC
+site:linkedin.com/posts "voicemail" "customers" plumbing
+site:linkedin.com/posts "can't answer" "calls" "our techs"
+site:linkedin.com/posts "CSR" "after hours" HVAC
+site:linkedin.com/posts "dispatcher" "after hours" calls plumbing
+
+# --- AI-curious business owners who don't know where to start ---
+site:linkedin.com/posts "how do I" "AI" "my business"
+site:linkedin.com/posts "where do I start" AI "small business"
+site:linkedin.com/posts "don't know where to start" AI business
+site:linkedin.com/posts "AI" "small business owner" "where to start"
+site:linkedin.com/posts "AI" "for my business" "don't know"
+site:linkedin.com/posts "AI tools" "home service" "anyone"
+site:linkedin.com/posts "AI" "home service business" "questions"
+site:linkedin.com/posts "AI" "contractors" "anyone using"
+site:linkedin.com/posts "has anyone" "AI" "answering"
+site:linkedin.com/posts "honest question" AI "small business"
+site:linkedin.com/posts "what are you using" AI "small business"
