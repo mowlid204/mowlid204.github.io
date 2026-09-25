@@ -106,21 +106,31 @@ GENERIC_TOKENS = {"roofing", "roofers", "roofer", "roof", "roofs", "plumbing", "
                   "indiana", "missouri", "dakota", "quality", "best", "pro", "american", "family", "city", "metro"}
 
 
-def site_matches(name, url, title):
+def site_matches(name, url, title, allow_domain=True):
     """A found website counts only if its domain or page title carries a distinctive word of the business name."""
-    toks = [t for t in norm_name(name).split() if len(t) >= 4 and t not in GENERIC_TOKENS]
-    if not toks:  # names made only of generic words: require the first two words together in the title
-        first2 = " ".join(norm_name(name).split()[:2])
-        return bool(first2) and first2 in norm_name(title or "")
+    words = norm_name(name).split()
+    toks = [t for t in words if len(t) >= 4 and t not in GENERIC_TOKENS]
     dom = urllib.parse.urlsplit(url).netloc.lower().replace("-", "")
     if re.search(r"people|news|magazine|times|journal|tribune|gazette|herald|world|press|directory|guide|review|rated|"
-                 r"nearme|findа|pages|listing|listings|citation|profile|wiki|blog|forum|jobs|career|indeed", dom):
+                 r"nearme|pages|listing|listings|citation|profile|wiki|blog|forum|jobs|career|indeed", dom):
         return False                                   # media / directory sites, even when they mention the name
-    if any(t in dom for t in toks):
+    compact = "".join(words)
+    if allow_domain and compact and len(compact) >= 6 and compact in dom:
+        return True                                    # abestroofing.com, americanhomepros.com
+    if not toks:  # names made only of generic words: require the first two words together in the title
+        first2 = " ".join(words[:2])
+        return bool(first2) and first2 in norm_name(title or "")
+    if allow_domain and any(t in dom for t in toks):
         return True
     tl = " " + re.sub(r"[^a-z0-9 ]", " ", (title or "").lower()) + " "
     return sum(1 for t in toks if f" {t} " in tl or t in tl.replace(" ", "")) >= min(2, len(toks))
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+AREA_CODES = {  # a phone outside the state's area codes gets a "verify" note (could be a national office)
+    "OK": {"918", "539", "405", "572", "580"}, "NE": {"402", "531", "308"}, "KS": {"316", "785", "913", "620"},
+    "SD": {"605"}, "MO": {"417", "573", "314", "636", "816", "660", "557"}, "IA": {"515", "319", "563", "641", "712"},
+    "MI": {"616", "231", "269", "517", "313", "248", "734", "810", "586", "989", "906", "947", "679"},
+    "KY": {"859", "502", "606", "270", "364"}, "IN": {"260", "317", "463", "219", "574", "765", "812", "930"},
+}
 
 
 def log(msg):
@@ -403,10 +413,11 @@ def cmd_lists(a):
 # ----------------------------------------------------------------------------------------------
 # merge / score (used by profiles, enrich, export)
 # ----------------------------------------------------------------------------------------------
-def merge_cards(out):
+def merge_cards(out, cities=None):
     biz = {}
+    want = {c.lower() for c in (cities or [])}
     for r in read_jsonl(Path(out) / "cards.jsonl"):
-        if not r.get("name"):
+        if not r.get("name") or (want and r.get("metro", "").lower() not in want):
             continue
         key = r.get("customer_id") or norm_name(r["name"])
         b = biz.get(key)
@@ -491,6 +502,7 @@ def score(b):
         s += 6
     if b.get("weekly_hours") and all("24 hours" in h for h in b["weekly_hours"].values()):
         notes.append("advertises 24/7: ask who answers at night")
+    s += b.get("adjust", 0)
     b["score"] = round(s, 1)
     b["auto_notes"] = "; ".join(notes)
     return s
@@ -528,7 +540,7 @@ def parse_profile(html):
 
 def cmd_profiles(a):
     out = Path(a.out); raw = out / "raw_profiles"; raw.mkdir(parents=True, exist_ok=True)
-    biz = merge_cards(out)
+    biz = merge_cards(out, a.cities)
     have = {p["customer_id"] for p in read_jsonl(out / "profiles.jsonl")}
     for b in biz.values():
         score(b)
@@ -679,16 +691,19 @@ def guess_site(web, name, trades, city):
     words = norm_name(name).split()
     first = "".join(words[:2]) if len(words) > 2 else base
     tw = {"Roofing": "roofing", "HVAC": "hvac", "Plumbing": "plumbing", "Electrical": "electric"}
+    stems = [base, first, base.replace("and", "")] + [first + tw[t] for t in trades if t in tw] + \
+            [base + re.sub(r"[^a-z]", "", city.lower())]
     cands = []
-    for stem in dict.fromkeys([base, first, base.replace("and", ""), first + tw.get(trades[0], ""), base + re.sub(r"[^a-z]", "", city.lower())]):
+    for stem in dict.fromkeys(stems):
         if 4 <= len(stem) <= 40:
-            cands += [f"https://www.{stem}.com", f"https://{stem}.com", f"https://www.{stem}.net"]
-    for u in cands[:9]:
+            cands += [f"https://www.{stem}.com", f"https://{stem}.com"]
+    for u in cands[:10]:
         r = web.get(u, timeout=10)
         if not r:
             continue
         m = re.search(r"<title[^>]*>([^<]{0,200})", r.text, re.I)
-        if site_matches(name, r.url, htmlmod.unescape(m.group(1)) if m else ""):
+        title = htmlmod.unescape(m.group(1)) if m else ""
+        if site_matches(name, r.url, title, allow_domain=False):   # a guessed domain must prove itself by its title
             return r.url
     return ""
 
@@ -723,7 +738,9 @@ def bbb_search(web, name, city, state, _retry=False):
                 "bbb_out_of_business": bool(oob and oob.group(1) != "null")}
         if cand["bbb_out_of_business"]:
             continue
-        if best is None or (cand["bbb_city"].lower() == city.lower() and best["bbb_city"].lower() != city.lower()):
+        metro_cities = {city.lower()} | {sub.lower() for c, st, subs in CITIES if c.lower() == city.lower() for sub in subs}
+        in_metro = cand["bbb_city"].lower() in metro_cities
+        if best is None or (in_metro and best["bbb_city"].lower() not in metro_cities):
             best = cand
     if best is None and len(want) > 2 and not _retry:
         return bbb_search(web, " ".join(want[:2]), city, state, _retry=True)   # "Mullin Plumbing, HVAC & Septic" -> "mullin plumbing"
@@ -751,7 +768,7 @@ def load_bbb_index():
 
 def cmd_enrich(a):
     out = Path(a.out)
-    biz = merge_cards(out)
+    biz = merge_cards(out, a.cities)
     for b in biz.values():
         score(b)
     have = {e["customer_id"]: e for e in read_jsonl(out / "enriched.jsonl")}
@@ -801,6 +818,7 @@ def cmd_enrich(a):
                     info = site_contact(web, g)
             if info:
                 e["website"] = info.get("website", e["website"])
+                e["site_title"] = info.get("site_title", "")
                 e["site_signals"] = info.get("site_signals", "")
                 if info.get("phone") and not e["phone"]:
                     e["phone"], e["phone_source"] = info["phone"], info["phone_source"]
@@ -813,6 +831,9 @@ def cmd_enrich(a):
                     e["title"] = e["title"] or (re.search(ROLE, info.get("owner_context", "")) or [None])[0] or "Owner"
                     if isinstance(e["title"], re.Match):
                         e["title"] = e["title"].group(0)
+        ac = digits(e["phone"])[:3] if e["phone"] else ""
+        if ac and ac not in AREA_CODES.get(b["state"], set()):
+            e["notes"] = (e.get("notes", "") + f"; area code {ac} is not local to {b['state']}: verify before calling").strip("; ")
         # never use the ad's tracking number as the phone; note if the site's number equals it
         if b.get("lsa_display_phone") and e["phone"] and digits(b["lsa_display_phone"]) == digits(e["phone"]):
             e["phone_source"] += " (same number as in the ad)"
@@ -832,9 +853,16 @@ COLS = ["Rank", "Caller", "Business", "Trade", "City", "State", "Phone", "Phone 
 
 def cmd_export(a):
     out = Path(a.out)
-    biz = merge_cards(out)
+    biz = merge_cards(out, a.cities)
     prof = {p["customer_id"]: p for p in read_jsonl(out / "profiles.jsonl")}
     enr = {e["customer_id"]: e for e in read_jsonl(out / "enriched.jsonl")}
+    # hand-verified owners (out/owner_overrides.csv: Business, City, Owner, Title, Source, Note) win over scraped ones
+    overrides = {}
+    op = out / "owner_overrides.csv"
+    if op.exists():
+        with open(op, encoding="utf-8-sig", newline="") as f:
+            for r in csv.DictReader(f):
+                overrides[(norm_name(r.get("Business", "")), (r.get("City") or "").lower())] = r
     for b in biz.values():                      # a merged twin's data counts for the survivor
         for cid in b.get("other_customer_ids", []):
             if cid in prof and b["customer_id"] not in prof:
@@ -845,6 +873,18 @@ def cmd_export(a):
     seen_phone = {}
     for key, b in biz.items():
         p = prof.get(b["customer_id"], {}); e = enr.get(b["customer_id"], {})
+        ov = overrides.get((norm_name(b["name"]), b["primary_metro"].lower()))
+        if ov:
+            e = dict(e)
+            if ov.get("Owner"):
+                e["owner"] = ov["Owner"]; e["title"] = ov.get("Title", "") or e.get("title", "")
+                e["owner_source"] = ov.get("Source", "hand-verified")
+            if ov.get("Note"):
+                e["notes"] = (e.get("notes", "") + "; " + ov["Note"]).strip("; ")
+            try:
+                b["adjust"] = float(ov.get("Adjust") or 0)
+            except ValueError:
+                b["adjust"] = 0
         b["weekly_hours"] = p.get("weekly_hours", {}); b["phone"] = e.get("phone", ""); b["owner"] = e.get("owner", "")
         score(b)
         b["p"] = p; b["e"] = e
@@ -855,6 +895,9 @@ def cmd_export(a):
         if ph and ph in seen_phone:      # same line under two names: keep the higher-ranked one, note the alias
             seen_phone[ph]["Qualification notes"] += f"; also listed as {b['name']}"
             continue
+        if e.get("website") and not site_matches(b["name"], e["website"], e.get("site_title", "")):
+            e["notes"] = (e.get("notes", "") + f"; website candidate {e['website']} not verified").strip("; ")
+            e["website"] = ""
         wk = p.get("weekly_hours", {})
         weekly = "; ".join(f"{d[:3]} {wk[d]}" for d in DAYS if d in wk)
         notes = [b.get("auto_notes", "")]

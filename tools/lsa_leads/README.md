@@ -63,3 +63,13 @@ Review count, Years in business, Hours (ad status), Weekly hours, Highlights, Li
 Booking tool, Site signals, Qualification notes, LSA proof (profile URL, Google Ads customer ID, listing
 URL, screenshot), First seen, Also listed for, LSA display phone (DO NOT CALL), Score, Franchise flag,
 Rank, Caller.
+
+## Owner names
+
+Owners come from three places, in order: the BBB-built lists already in this repo (roofing), the
+company website's home and about pages, and `out/owner_overrides.csv`, a hand-verified file
+(`Business, City, Owner, Title, Source, Note, Adjust`) that wins over scraped values. `Adjust` is
+added to the score, which is how private-equity-owned or acquired companies get pushed down the
+list without being removed. BBB profile pages, the best owner source, sit behind a bot check on
+cloud networks; from a home connection they open normally and `Business Management` on the profile
+is the name to take.
