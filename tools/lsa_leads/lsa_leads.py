@@ -1074,11 +1074,11 @@ def build_rows(a):
     dom_count = {}
     for b in biz.values():
         w = b["e"].get("website", "")
-        if w:
+        if w and b["e"].get("website_source") != "hand-verified":
             dom_count[urllib.parse.urlsplit(w).netloc.lower()] = dom_count.get(urllib.parse.urlsplit(w).netloc.lower(), 0) + 1
     for b in biz.values():
         w = b["e"].get("website", "")
-        if w and dom_count.get(urllib.parse.urlsplit(w).netloc.lower(), 0) > 1:
+        if w and b["e"].get("website_source") != "hand-verified" and dom_count.get(urllib.parse.urlsplit(w).netloc.lower(), 0) > 1:
             b["e"]["notes"] = (b["e"].get("notes", "") + f"; {w} is shared by several businesses (directory), ignored").strip("; ")
             b["e"]["website"] = ""
             if b["e"].get("phone_source", "").startswith("website"):
