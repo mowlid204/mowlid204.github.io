@@ -83,7 +83,7 @@ CORPORATE_REMOVE = [  # corporate-owned chains and private-equity platforms: rem
     "homex", "nexstar", "arco ", "arcoair", "abc home", "abc plumbing", "four seasons heating", "dabella",
     "renewal by andersen", "west shore home", "long home", "windows usa", "1-800-hansons", "hansons", "feldco",
     "pella", "andersen", "power home", "champion", "leafguard", "thompson creek", "mad city", "k designers",
-    "mr. roof", "mr roof", "bone dry roofing", "atrium home", "heartland home services", "northwinds", "best choice roofing",
+    "mr. roof", "mr roof", "bone dry roofing", "atrium home", "heartland home services", "northwinds", "best choice roofing", "peterman brothers",
 ]
 FRANCHISE = [  # franchise brands: kept when the location is locally owned, but flagged and penalised
     "mr. rooter", "mr rooter", "zoom drain", "rooter-man", "rooterman", "bluefrog", "benjamin franklin", "one hour",
