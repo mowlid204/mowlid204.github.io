@@ -48,21 +48,34 @@ Steps, each resumable (nothing already saved is fetched again):
 Google shows a CAPTCHA page when it rate-limits a network. The script waits 10 minutes and retries
 once, then stops with everything saved; run it again later. Keep `--wait` at 5 seconds or more.
 
-## Ranking
+## Ranking, removal and the workbook
 
-Score = log(review count) + rating bonus + years in business + hours (24 hours > closes late >
-normal) + listed under several trades + online booking + fast reply time + BBB / family / veteran /
-local highlights + owner found + phone found, minus a franchise/national-brand penalty (flagged, not
-removed) and a "very large operation" penalty above 5,000 reviews. The `Score` column and the
-`Qualification notes` column explain each row.
+Ideal lead: verified LSA advertiser, independent and local, established and growing, owner or
+president still involved, a few crews rather than a giant, meaningful review volume (150 to
+3,000 is the sweet spot), a verified website, 24-hour or late phones, a business line we can call.
 
-## Columns
+**Removed entirely** (listed on the `Removed` tab with the reason): corporate-owned chains and
+national operators (`CORPORATE_REMOVE` in the script), and companies whose notes say they were
+acquired or are private-equity owned (`ACQUIRED_RE`, fed by `owner_overrides.csv` notes and the
+manual owner pass). **Kept but penalised**: franchise brands (`FRANCHISE`), 5,000+ review
+operations, 3+ trade multi-service shops, sites that mention an answering service.
 
-Business, Trade, City, State, Phone, Phone source, Website, Owner, Title, Owner source, Google rating,
-Review count, Years in business, Hours (ad status), Weekly hours, Highlights, License, Ownership notes,
-Booking tool, Site signals, Qualification notes, LSA proof (profile URL, Google Ads customer ID, listing
-URL, screenshot), First seen, Also listed for, LSA display phone (DO NOT CALL), Score, Franchise flag,
-Rank, Caller.
+Score = review volume (bonus in the 150 to 3,000 band, penalties above 5,000) + rating + years +
+hours (24 hours best) + trade breadth + how many LSA searches the ad appears in + online booking +
+reply speed + BBB / family / locally owned + verified website (+ Google Ads tag or call tracking)
++ owner-level contact known + verified phone, minus franchise and size penalties, plus any
+`Adjust` from the overrides file. Every row carries `Why this lead ranks highly` and `Red flags`.
+
+`export` writes `lsa_leads.xlsx` with tabs README, Top 50, Primary (ranks 1 to 300, `Caller`
+1/2/3 round-robin), Caller 1, Caller 2, Caller 3, Backup (301 to 500), All ranked, Removed, and a
+Summary of counts, plus the same as CSVs (`primary_300.csv`, `backup_200.csv`, `caller_N.csv`,
+`top_50.csv`, `removed.csv`, `all_ranked.csv`, `evidence.md`). Top 50 favours rows with an
+owner-level contact, 150 to 3,000 reviews, 24-hour phones and no flags. `--top` sets the total
+delivered (default 500), `--primary` the size of the primary list (default 300). Nothing is padded:
+if fewer advertisers survive, fewer are delivered.
+
+Enrichment can run in parallel per city: `enrich --cities Omaha --shard omaha` writes
+`out/enriched_omaha.jsonl`; export reads every `enriched*.jsonl`.
 
 ## Owner names
 
