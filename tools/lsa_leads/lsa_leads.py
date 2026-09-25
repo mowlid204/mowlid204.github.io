@@ -1075,7 +1075,10 @@ def build_rows(a):
                 e["owner"], e["title"] = m.group(1).strip(" ,"), (e.get("title") or m.group(2))
         # a website-sourced phone with a non-local area code usually means a same-named company elsewhere
         ac = digits(e.get("phone", ""))[:3]
-        if ac and ac not in AREA_CODES.get(b["state"], set()) and e.get("phone_source", "").startswith("website"):
+        local_codes = set(AREA_CODES.get(b["state"], set()))
+        if b["primary_metro"] == "Omaha":                       # the Omaha metro straddles Nebraska and Iowa
+            local_codes |= AREA_CODES.get("NE", set()) | AREA_CODES.get("IA", set())
+        if ac and ac not in local_codes and e.get("phone_source", "").startswith("website") and e.get("website_source") != "hand-verified":
             e["notes"] = (e.get("notes", "") + f"; dropped {e['website']} / {e['phone']}: same-named company in another state").strip("; ")
             e["phone"], e["phone_source"], e["website"] = "", "", ""
             if e.get("owner_source", "").startswith("http"):
