@@ -4,6 +4,7 @@
 Usage:
   python3 tools/build_leads.py pest    path/to/pest.csv
   python3 tools/build_leads.py roofing path/to/roofing.csv
+  python3 tools/build_leads.py linkedin tools/linkedin_intent/out/dialer_import.csv
 
 Writes <campaign>/leads.js.  Each campaign has its own file; nothing is shared.
 """
@@ -109,9 +110,38 @@ def roofing_rows(reader):
             "profile": "",
         }
 
+def linkedin_rows(reader):
+    """Rows from tools/linkedin_intent/out/dialer_import.csv (see tools/linkedin_intent/README.md)."""
+    for i, r in enumerate(reader, 1):
+        phone = clean(r.get("Phone"))
+        if not digits(phone):
+            continue
+        state = clean(r.get("State")).upper()[:2]
+        yield {
+            "rank": int(r.get("Rank") or i),
+            "tier": clean(r.get("Tier")).upper()[:1],
+            "owner": clean(r.get("Owner")),
+            "title": clean(r.get("Title")),
+            "business": clean(r.get("Business")),
+            "phone": phone,
+            "phoneAlt": "",
+            "city": clean(r.get("City")),
+            "state": state,
+            "market": clean(r.get("Market")) or clean(r.get("City")) or "LinkedIn",
+            "website": clean(r.get("Website")),
+            "email": clean(r.get("Email")),
+            "rating": "",
+            "accredited": False,
+            "years": "",
+            "services": "",
+            "notes": clean(r.get("Notes")),
+            "profile": clean(r.get("LinkedIn")) or clean(r.get("Post")),
+        }
+
 CAMPAIGNS = {
     "pest":    {"name": "Pest Control (Alberta)", "parser": pest_rows,    "prefix": "p"},
     "roofing": {"name": "Roofing (US)",           "parser": roofing_rows, "prefix": "r"},
+    "linkedin": {"name": "LinkedIn AI-intent",     "parser": linkedin_rows, "prefix": "l"},
 }
 
 def main():
