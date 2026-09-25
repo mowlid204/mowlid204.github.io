@@ -112,7 +112,7 @@ def site_matches(name, url, title, allow_domain=True):
     toks = [t for t in words if len(t) >= 4 and t not in GENERIC_TOKENS]
     dom = urllib.parse.urlsplit(url).netloc.lower().replace("-", "")
     if re.search(r"people|news|magazine|times|journal|tribune|gazette|herald|world|press|directory|guide|review|rated|"
-                 r"nearme|pages|listing|listings|citation|profile|wiki|blog|forum|jobs|career|indeed", dom):
+                 r"nearme|pages|listing|listings|citation|profile|wiki|blog|forum|jobs|career|indeed|hba|association|members|chamber", dom):
         return False                                   # media / directory sites, even when they mention the name
     compact = "".join(words)
     if allow_domain and compact and len(compact) >= 6 and compact in dom:
