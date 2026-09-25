@@ -1262,6 +1262,49 @@ def write_workbook(path, rows, removed, kept):
         ws.cell(row=i, column=2, value=formula).font = font
     ws.column_dimensions["A"].width = 34
     wb.save(path)
+    primary = [r for r in rows if r["List"] == "Primary"]; backup = [r for r in rows if r["List"] == "Backup"]
+    cache_formula_values(path, "Summary", {
+        "B2": len(primary) + len(backup), "B3": len(primary), "B4": len(backup),
+        "B5": sum(1 for r in primary if r["Caller"] == 1), "B6": sum(1 for r in primary if r["Caller"] == 2),
+        "B7": sum(1 for r in primary if r["Caller"] == 3), "B8": sum(1 for r in rows if r["Top 50"]),
+        "B9": len(kept), "B10": len(removed),
+        "B11": sum(1 for r in primary if r.get("Phone")), "B12": sum(1 for r in primary if r.get("Owner")),
+    })
+
+
+def cache_formula_values(path, sheet_name, values):
+    """openpyxl writes formulas without cached results, so previewers show blanks until a spreadsheet app
+    recalculates. This stores the Python-computed result next to each formula (Excel still recalculates)."""
+    import zipfile, shutil, tempfile
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        wbxml = z.read("xl/workbook.xml").decode("utf-8")
+        rels = z.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+        m = re.search(r'<sheet[^>]*name="%s"[^>]*r:id="(rId\d+)"' % re.escape(sheet_name), wbxml) or \
+            re.search(r'<sheet[^>]*r:id="(rId\d+)"[^>]*name="%s"' % re.escape(sheet_name), wbxml)
+        if not m:
+            return
+        t = re.search(r'<Relationship[^>]*Id="%s"[^>]*Target="([^"]+)"' % m.group(1), rels) or \
+            re.search(r'<Relationship[^>]*Target="([^"]+)"[^>]*Id="%s"' % m.group(1), rels)
+        if not t:
+            return
+        target = t.group(1).lstrip("/")
+        target = target if target.startswith("xl/") else "xl/" + target
+        xml = z.read(target).decode("utf-8")
+        for ref, val in values.items():
+            def repl(mm, val=val):
+                cell = mm.group(0)
+                cell = re.sub(r"<v>[^<]*</v>|<v/>", "", cell)
+                cell = re.sub(r'\s+t="[^"]*"', "", cell, count=1)
+                return cell.replace("</f>", f"</f><v>{val}</v>", 1)
+            xml = re.sub(r'<c r="%s"[^>]*>.*?</c>' % ref, repl, xml, count=1, flags=re.S)
+        data = {n: z.read(n) for n in names}
+    data[target] = xml.encode("utf-8")
+    tmp = path.with_suffix(".tmp.xlsx") if hasattr(path, "with_suffix") else Path(str(path) + ".tmp")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zo:
+        for n in names:
+            zo.writestr(n, data[n])
+    shutil.move(str(tmp), str(path))
 
 
 def cmd_run(a):
