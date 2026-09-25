@@ -1053,6 +1053,9 @@ def build_rows(a):
                 if e.get("website") and e["website"].rstrip("/").lower() != w.rstrip("/").lower() and e.get("phone_source", "").startswith("website"):
                     e["phone"], e["phone_source"] = "", ""      # the phone came from the wrong site
                 e["website"], e["site_title"], e["website_source"] = w, b["name"], "hand-verified"
+                dom = urllib.parse.urlsplit(w).netloc.lower().replace("www.", "")
+                e["notes"] = "; ".join(n for n in (e.get("notes") or "").split("; ")
+                                       if not (re.search(r"site candidate|not verified|ignored", n) and dom in n.lower()))
             if (ov.get("Phone") or "").strip():
                 e["phone"], e["phone_source"] = fmt_phone(ov["Phone"]), "hand-verified (" + (ov.get("Source") or "web search") + ")"
             if ov.get("Note"):
