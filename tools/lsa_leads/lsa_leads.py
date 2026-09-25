@@ -72,15 +72,25 @@ TRADES = {  # first term is the primary one, also used for suburb queries
     "Plumbing": ["plumbers", "drain cleaning", "water heater repair"],
     "Electrical": ["electricians", "electrical contractors", "electrical repair"],
 }
-FRANCHISE = [  # national brands / franchises: kept, but flagged and ranked lower
-    "roto-rooter", "roto rooter", "mr. rooter", "mr rooter", "zoom drain", "rooter-man", "rooterman", "bluefrog",
-    "benjamin franklin", "one hour", "mister sparky", "mr. electric", "mr electric", "aire serv", "aireserv",
-    "ars ", "ars/", "service experts", "erie home", "erie metal", "power home", "leaffilter", "leaf filter",
-    "leafguard", "gutter guard", "window world", "champion window", "roof maxx", "roofmaxx", "dr. roof", "sears",
-    "lowe's", "home depot", "1-800", "1800", "neighborly", "lennox", "trane", "carrier", "hvac.com", "angi",
-    "homeadvisor", "thumbtack", "bath fitter", "re-bath", "precision door", "the maids", "moxie", "any hour",
-    "anyhour", "gold medal", "goettl", "wrench group", "apex service partners", "morris-jenkins", "abc home",
+CORPORATE_REMOVE = [  # corporate-owned chains and private-equity platforms: removed from the list
+    "service experts", "ars ", "ars/", "rescue rooter", "roto-rooter", "roto rooter", "erie home", "erie metal",
+    "power home", "leaffilter", "leaf filter", "leafguard", "window world", "champion window", "bath fitter", "re-bath",
+    "sears", "lowe's", "home depot", "homeserve", "apex service", "wrench group", "goettl", "any hour", "anyhour",
+    "redwood services", "turnpoint", "horizon services", "morris-jenkins", "ace hardware", "ace home services",
+    "hometown services", "legacy service partners", "southern hvac", "heartland home", "frontdoor",
+    "american residential", "comfort systems", "1-800", "1800", "hvac.com", "sila heating", "sila services",
+    "cool today", "plumbing today", "one hour air conditioning & heating of", "unique indoor comfort",
+    "homex", "nexstar", "arco ", "arcoair", "abc home", "abc plumbing", "four seasons heating",
 ]
+FRANCHISE = [  # franchise brands: kept when the location is locally owned, but flagged and penalised
+    "mr. rooter", "mr rooter", "zoom drain", "rooter-man", "rooterman", "bluefrog", "benjamin franklin", "one hour",
+    "mister sparky", "mr. electric", "mr electric", "aire serv", "aireserv", "neighborly", "precision door",
+    "dr. roof", "roof maxx", "roofmaxx", "mighty dog roofing", "handyman connection", "mr. handyman", "1 tom plumber",
+    "pink plumber", "the plumbing pros", "hoffmann brothers", "wire wiz", "electricians on call", "lightning bug",
+    "captain electric", "storm guard", "roof squad", "moxie", "gold medal", "grounds guys", "wireman",
+]
+ACQUIRED_RE = re.compile(r"(was |been |were )?acquired by|acquisition by|private[- ]equity|sold to |owned by [^;]*(group|partners|"
+                         r"holdings|capital)|part of the [^;]* group|portfolio company|backed by", re.I)
 BUTTONS = {"Get phone number", "Book", "Get quote", "Share", "Book online", "Call", "Message", "Website"}
 BLOCK_DOMAINS = (
     "google.", "facebook.", "instagram.", "yelp.", "bbb.org", "yellowpages", "mapquest", "indeed.", "glassdoor",
@@ -96,6 +106,7 @@ BLOCK_DOMAINS = (
     "lead411", "rocketreach", "signalhire", "dexknows", "iglobal", "localstack", "findacontractor", "contractors.com",
     "hvacrepair", "yellowpagecity", "usaroofers", "roofingcontractor.", "mapsconnect", "cityfos", "bizhwy", "salespider",
     "companieshub", "callupcontact", "trustanalytica", "prolocalservices", "top10", "bestprosintown", "hubbiz", "loc8nearme",
+    "hvacservice.io", "plumbingservice.io", "roofingservice.io", "electricservice.io", "servicepros", "homeflow", "nearby",
 )
 GENERIC_TOKENS = {"roofing", "roofers", "roofer", "roof", "roofs", "plumbing", "plumber", "plumbers", "electric", "electrical",
                   "electricians", "electrician", "hvac", "heating", "cooling", "air", "conditioning", "service", "services",
@@ -468,46 +479,117 @@ def is_franchise(name):
     return any(f in n for f in FRANCHISE)
 
 
+def is_corporate(name):
+    n = " " + name.lower() + " "
+    return any(f in n for f in CORPORATE_REMOVE)
+
+
+OWNER_TITLES = re.compile(r"owner|founder|president|principal|proprietor|general manager|managing", re.I)
+
+
 def score(b):
+    """Ranking + the two explanation columns. Sets b['score'], b['why'], b['flags'], b['exclude'].
+    Ideal lead: independent, established, 150-3,000 reviews, owner still involved, 24/7 phone-heavy."""
+    why, flags = [], []
     reviews = int(b.get("reviews") or 0)
-    s = math.log10(reviews + 1) * 10                      # 100 reviews ~ 20, 1000 ~ 30
+    s = math.log10(reviews + 1) * 8                          # 150 reviews ~ 17, 1,000 ~ 24, 5,000 ~ 30
+    if 150 <= reviews <= 3000:
+        s += 6; why.append(f"{reviews:,} reviews: real call volume, still owner-sized")
+    elif reviews < 150:
+        s -= (150 - reviews) / 150 * 6
+        if reviews < 60:
+            flags.append(f"only {reviews} reviews: may not have much inbound volume")
+    elif reviews <= 5000:
+        s -= 3; why.append(f"{reviews:,} reviews: high volume")
+    elif reviews <= 8000:
+        s -= 9; flags.append(f"{reviews:,} reviews: looks large, probably has a dispatch desk or call center")
+    else:
+        s -= 15; flags.append(f"{reviews:,} reviews: very large operation, likely corporate-style call center")
     try:
         rt = float(b.get("rating") or 0)
     except ValueError:
         rt = 0
-    s += 5 if rt >= 4.7 else 3 if rt >= 4.5 else 0
+    if rt >= 4.7:
+        s += 4; why.append(f"rated {rt}")
+    elif rt >= 4.5:
+        s += 2
+    elif rt and rt < 4.3:
+        s -= 3; flags.append(f"rating {rt}")
     yrs = b.get("years")
     if isinstance(yrs, int):
-        s += min(yrs, 30) / 30 * 8
+        s += min(yrs, 25) / 25 * 6
+        if yrs >= 10:
+            why.append(f"{yrs}+ years in business")
+        elif yrs < 3:
+            s -= 2; flags.append(f"{yrs} years in business")
     hs = (b.get("hours_status") or "").lower()
     if "24 hours" in hs:
-        s += 8
+        s += 6; why.append("advertises 24-hour phones: every night call is exposure")
     elif re.search(r"closes (7|8|9|10|11)", hs):
-        s += 5
+        s += 4; why.append("open late")
     elif hs:
-        s += 2
-    s += (len(b.get("trades", [])) - 1) * 4
+        s += 1
+    nt = len(b.get("trades", []))
+    if nt == 2:
+        s += 2; why.append("advertises in 2 trades")
+    elif nt >= 3:
+        s -= 3; flags.append("advertises in 3+ trades: multi-service operation")
+    nq = len(set(b.get("queries", [])))
+    if nq >= 4:
+        s += 3; why.append(f"shows in {nq} different LSA searches: broad ad coverage")
     if b.get("booking_url"):
-        s += 3
+        s += 2; why.append("online booking in the ad")
     rp = (b.get("reply") or "").lower()
-    s += 3 if ("min" in rp) else 1 if "hour" in rp else 0
+    if "min" in rp:
+        s += 2; why.append(f"replies in {b['reply']}")
+    elif "hour" in rp:
+        s += 1
     hl = (b.get("highlights") or "").lower()
-    s += 2 if "bbb accredited" in hl else 0
-    s += 2 if re.search(r"family owned|veteran owned|local business|locally", hl) else 0
-    notes = []
-    if is_franchise(b["name"]):
-        s -= 10; notes.append("franchise/national brand: confirm the location is locally owned")
-    if reviews >= 5000:
-        s -= 5; notes.append("very large operation (5k+ reviews), likely has a call center")
-    if b.get("owner"):
+    if "bbb accredited" in hl:
+        s += 2
+    if re.search(r"family owned|veteran owned|local business|locally", hl + " " + " ".join(b.get("ownership", [])).lower()):
+        s += 3; why.append("family / locally owned")
+    e = b.get("e", {})
+    if e.get("website"):
+        s += 3
+        sig = e.get("site_signals", "")
+        if re.search(r"Google Ads tag|call tracking", sig):
+            s += 2; why.append("website runs Google Ads tag / call tracking: pays for calls beyond LSA")
+        if "answering service" in sig or "Smith.ai" in sig:
+            s -= 4; flags.append("website mentions an answering service: may already have coverage")
+        if "Housecall Pro" in sig or "ServiceTitan" in sig or "Jobber" in sig:
+            s += 1; why.append("runs field-service software")
+    else:
+        s -= 2; flags.append("no verified website found")
+    own = e.get("owner", "")
+    if own:
+        if OWNER_TITLES.search(e.get("title", "") or "owner"):
+            s += 7; why.append(f"owner-level contact known: {own}")
+        else:
+            s += 3; why.append(f"contact known: {own} ({e.get('title', '')})")
+    else:
+        flags.append("owner not identified yet: ask for the owner")
+    if e.get("phone"):
         s += 4
-    if b.get("phone"):
-        s += 6
-    if b.get("weekly_hours") and all("24 hours" in h for h in b["weekly_hours"].values()):
-        notes.append("advertises 24/7: ask who answers at night")
+    else:
+        s -= 8; flags.append("no verified business line: look up before calling")
+    if is_franchise(b["name"]):
+        s -= 8; flags.append("franchise brand: confirm the local owner can buy")
+    exclude = ""
+    if is_corporate(b["name"]):
+        exclude = "corporate-owned chain / national operator"
+    note_text = " ".join([e.get("notes", ""), b.get("override_note", "")])
+    if ACQUIRED_RE.search(note_text):
+        exclude = exclude or "acquired / private-equity owned: decision not local"
+    if b.get("exclude_override"):
+        exclude = b["exclude_override"]
+    if re.search(r"area code \d{3} is not local", e.get("notes", "")):
+        flags.append("phone area code not local: verify")
     s += b.get("adjust", 0)
     b["score"] = round(s, 1)
-    b["auto_notes"] = "; ".join(notes)
+    b["why"] = "; ".join(why)
+    b["flags"] = "; ".join(flags)
+    b["exclude"] = exclude
     return s
 
 
@@ -595,8 +677,8 @@ class Web:
                     return out
             except Exception as e:
                 if "no results" not in str(e).lower():
-                    time.sleep(6)
-            time.sleep(1.5)
+                    time.sleep(3)
+            time.sleep(1)
         return []
 
     def get(self, url, timeout=20):
@@ -769,12 +851,26 @@ def load_bbb_index():
     return idx_name, idx_phone
 
 
+def read_enriched(out):
+    """All enrichment rows across shards (enriched.jsonl, enriched_<shard>.jsonl); later rows win."""
+    rows = {}
+    for f in sorted(Path(out).glob("enriched*.jsonl")):
+        if "_v" in f.name:
+            continue
+        for e in read_jsonl(f):
+            old = rows.get(e["customer_id"])
+            if old is None or e.get("phone") or not old.get("phone"):
+                rows[e["customer_id"]] = e
+    return rows
+
+
 def cmd_enrich(a):
     out = Path(a.out)
     biz = merge_cards(out, a.cities)
     for b in biz.values():
         score(b)
-    have = {e["customer_id"]: e for e in read_jsonl(out / "enriched.jsonl")}
+    have = read_enriched(out)
+    target = out / (f"enriched_{a.shard}.jsonl" if a.shard else "enriched.jsonl")
     done = {cid for cid, e in have.items() if e.get("phone") or a.no_retry}   # rows without a phone get another try
     todo = sorted([b for b in biz.values() if b["customer_id"] not in done], key=lambda b: -b["score"])[: a.top]
     log(f"enrich: {len(todo)} businesses ({len(have)} done)")
@@ -800,16 +896,14 @@ def cmd_enrich(a):
             e["bbb_url"] = bb["bbb_url"]; e["address"] = f"{bb['bbb_address']}, {bb['bbb_city']}, {b['state']} {bb['bbb_zip']}"
             if bb["bbb_phone"] and not e["phone"]:
                 e["phone"], e["phone_source"] = bb["bbb_phone"], "BBB listing"
-        # 3. website: from BBB row or a web search
-        site = e["website"]
-        if not site:
+        # 3. website: from BBB row, else guess the domain (cheap), else a web search (slow, rate-limited)
+        site = e["website"] or guess_site(web, b["name"], b["trades"], b["city"])
+        if not site and not a.no_search:
             res = web.search(f'"{b["name"]}" {b["city"]} {b["state"]}', 8)
             for r in res:
                 dom = urllib.parse.urlsplit(r["href"]).netloc.lower()
                 if dom and not any(x in dom for x in BLOCK_DOMAINS):
                     site = r["href"]; break
-        if not site:
-            site = guess_site(web, b["name"], b["trades"], b["city"])
         if site:
             info = site_contact(web, site)
             if info and not site_matches(b["name"], info.get("website", ""), info.get("site_title", "")) \
@@ -840,109 +934,149 @@ def cmd_enrich(a):
         # never use the ad's tracking number as the phone; note if the site's number equals it
         if b.get("lsa_display_phone") and e["phone"] and digits(b["lsa_display_phone"]) == digits(e["phone"]):
             e["phone_source"] += " (same number as in the ad)"
-        append_jsonl(out / "enriched.jsonl", [e])
+        append_jsonl(target, [e])
         log(f"  [{i}/{len(todo)}] {b['name'][:32]:32s} | {e['phone'] or '-':14s} {e['phone_source'][:22]:22s} | {e['owner'][:20]:20s} | {urllib.parse.urlsplit(e['website']).netloc[:28] if e['website'] else '-':28s} | {e.get('bbb', '')}")
 
 
 # ----------------------------------------------------------------------------------------------
 # export
 # ----------------------------------------------------------------------------------------------
-COLS = ["Rank", "Caller", "Business", "Trade", "City", "State", "Phone", "Phone source", "Website", "Owner", "Title",
-        "Owner source", "Google rating", "Review count", "Years in business", "Hours (ad status)", "Weekly hours",
-        "Highlights", "License", "Ownership notes", "Booking tool", "Site signals", "Qualification notes",
+COLS = ["Rank", "List", "Caller", "Top 50", "Business", "Trade", "City", "State", "Phone", "Phone source", "Website",
+        "Owner", "Title", "Owner source", "Google rating", "Review count", "Years in business", "Hours (ad status)",
+        "Weekly hours", "Why this lead ranks highly", "Red flags", "Highlights", "License", "Ownership notes",
+        "Booking tool", "Site signals", "Address (BBB)", "BBB", "Notes",
         "LSA proof: profile URL", "LSA proof: Google Ads customer ID", "LSA proof: listing URL", "LSA proof: screenshot",
-        "First seen (UTC)", "Also listed for", "LSA display phone (DO NOT CALL - tracking number)", "Score", "Franchise flag"]
+        "First seen (UTC)", "Also listed for", "LSA display phone (DO NOT CALL - tracking number)", "Score"]
+REMOVED_COLS = ["Business", "Trade", "City", "State", "Google rating", "Review count", "Reason removed",
+                "LSA proof: Google Ads customer ID", "LSA proof: profile URL"]
 
 
-def cmd_export(a):
+def build_rows(a):
+    """Merge cards + profiles + enrichment + overrides, score, dedupe, return (kept_rows, removed_rows)."""
     out = Path(a.out)
     biz = merge_cards(out, a.cities)
     prof = {p["customer_id"]: p for p in read_jsonl(out / "profiles.jsonl")}
-    enr = {e["customer_id"]: e for e in read_jsonl(out / "enriched.jsonl")}
-    # hand-verified owners (out/owner_overrides.csv: Business, City, Owner, Title, Source, Note) win over scraped ones
-    overrides = {}
-    op = out / "owner_overrides.csv"
-    if op.exists():
-        with open(op, encoding="utf-8-sig", newline="") as f:
-            for r in csv.DictReader(f):
-                overrides[(norm_name(r.get("Business", "")), (r.get("City") or "").lower())] = r
+    enr = read_enriched(out)
     for b in biz.values():                      # a merged twin's data counts for the survivor
         for cid in b.get("other_customer_ids", []):
             if cid in prof and b["customer_id"] not in prof:
                 prof[b["customer_id"]] = prof[cid]
             if cid in enr and (b["customer_id"] not in enr or not enr[b["customer_id"]].get("phone")):
                 enr[b["customer_id"]] = enr[cid]
-    rows = []
-    seen_phone = {}
+    overrides = {}
+    op = out / "owner_overrides.csv"
+    if op.exists():
+        with open(op, encoding="utf-8-sig", newline="") as f:
+            for r in csv.DictReader(f):
+                overrides[(norm_name(r.get("Business", "")), (r.get("City") or "").lower())] = r
     for key, b in biz.items():
-        p = prof.get(b["customer_id"], {}); e = enr.get(b["customer_id"], {})
+        p = prof.get(b["customer_id"], {}); e = dict(enr.get(b["customer_id"], {}))
         ov = overrides.get((norm_name(b["name"]), b["primary_metro"].lower()))
         if ov:
-            e = dict(e)
             if ov.get("Owner"):
                 e["owner"] = ov["Owner"]; e["title"] = ov.get("Title", "") or e.get("title", "")
                 e["owner_source"] = ov.get("Source", "hand-verified")
             if ov.get("Note"):
-                e["notes"] = (e.get("notes", "") + "; " + ov["Note"]).strip("; ")
+                b["override_note"] = ov["Note"]
+            if ov.get("Exclude"):
+                b["exclude_override"] = ov["Exclude"]
             try:
                 b["adjust"] = float(ov.get("Adjust") or 0)
             except ValueError:
                 b["adjust"] = 0
-        b["weekly_hours"] = p.get("weekly_hours", {}); b["phone"] = e.get("phone", ""); b["owner"] = e.get("owner", "")
-        score(b)
-        b["p"] = p; b["e"] = e
-    ordered = sorted(biz.values(), key=lambda b: -b["score"])
-    for b in ordered:
-        e, p = b["e"], b["p"]
-        ph = digits(e.get("phone", ""))
-        if ph and ph in seen_phone:      # same line under two names: keep the higher-ranked one, note the alias
-            seen_phone[ph]["Qualification notes"] += f"; also listed as {b['name']}"
-            continue
         if e.get("website") and not site_matches(b["name"], e["website"], e.get("site_title", "")):
             e["notes"] = (e.get("notes", "") + f"; website candidate {e['website']} not verified").strip("; ")
             e["website"] = ""
+        b["weekly_hours"] = p.get("weekly_hours", {}); b["ownership"] = p.get("ownership", [])
+        b["p"] = p; b["e"] = e
+        score(b)
+    dom_count = {}
+    for b in biz.values():
+        w = b["e"].get("website", "")
+        if w:
+            dom_count[urllib.parse.urlsplit(w).netloc.lower()] = dom_count.get(urllib.parse.urlsplit(w).netloc.lower(), 0) + 1
+    for b in biz.values():
+        w = b["e"].get("website", "")
+        if w and dom_count.get(urllib.parse.urlsplit(w).netloc.lower(), 0) > 1:
+            b["e"]["notes"] = (b["e"].get("notes", "") + f"; {w} is shared by several businesses (directory), ignored").strip("; ")
+            b["e"]["website"] = ""
+            if b["e"].get("phone_source", "").startswith("website"):
+                b["e"]["phone"], b["e"]["phone_source"] = "", ""
+            score(b)
+    ordered = sorted(biz.values(), key=lambda b: -b["score"])
+    kept, removed, seen_phone = [], [], {}
+    for b in ordered:
+        e, p = b["e"], b["p"]
+        if b["exclude"]:
+            removed.append({"Business": b["name"], "Trade": " / ".join(b["trades"]), "City": b["primary_metro"], "State": b["state"],
+                            "Google rating": b.get("rating", ""), "Review count": b.get("reviews", 0), "Reason removed": b["exclude"],
+                            "LSA proof: Google Ads customer ID": b["customer_id"], "LSA proof: profile URL": b["profile_url"]})
+            continue
+        ph = digits(e.get("phone", ""))
+        if ph and ph in seen_phone:      # same line under two names: keep the higher-ranked one, note the alias
+            seen_phone[ph]["Notes"] += f"; also advertises as {b['name']}"
+            continue
         wk = p.get("weekly_hours", {})
         weekly = "; ".join(f"{d[:3]} {wk[d]}" for d in DAYS if d in wk)
-        notes = [b.get("auto_notes", "")]
-        if e.get("bbb"):
-            notes.append(e["bbb"])
-        if e.get("address"):
-            notes.append(e["address"])
-        if e.get("notes"):
-            notes.append(e["notes"])
+        notes = [e.get("bbb", ""), e.get("notes", ""), b.get("override_note", "")]
         if b.get("reply"):
             notes.append(f"replies in {b['reply']}")
         if e.get("phone_alt"):
             notes.append(f"alt phone {e['phone_alt']}")
-        if not e.get("phone"):
-            notes.append("no verified business line yet: look up before calling")
         row = {
-            "Rank": 0, "Caller": 0, "Business": b["name"], "Trade": " / ".join(b["trades"]), "City": b["primary_metro"],
-            "State": b["state"], "Phone": e.get("phone", ""), "Phone source": e.get("phone_source", ""),
+            "Rank": 0, "List": "", "Caller": "", "Top 50": "", "Business": b["name"], "Trade": " / ".join(b["trades"]),
+            "City": b["primary_metro"], "State": b["state"], "Phone": e.get("phone", ""), "Phone source": e.get("phone_source", ""),
             "Website": e.get("website", ""), "Owner": e.get("owner", ""), "Title": e.get("title", ""),
             "Owner source": e.get("owner_source", ""), "Google rating": b.get("rating", ""), "Review count": b.get("reviews", 0),
             "Years in business": b.get("years", ""), "Hours (ad status)": b.get("hours_status", ""), "Weekly hours": weekly,
-            "Highlights": b.get("highlights", ""), "License": p.get("license", ""), "Ownership notes": " · ".join(p.get("ownership", [])),
+            "Why this lead ranks highly": b["why"], "Red flags": b["flags"], "Highlights": b.get("highlights", ""),
+            "License": p.get("license", ""), "Ownership notes": " · ".join(p.get("ownership", [])),
             "Booking tool": urllib.parse.urlsplit(b.get("booking_url", "")).netloc if b.get("booking_url") else "",
-            "Site signals": e.get("site_signals", ""), "Qualification notes": "; ".join(n for n in notes if n),
-            "LSA proof: profile URL": b["profile_url"], "LSA proof: Google Ads customer ID": b["customer_id"],
+            "Site signals": e.get("site_signals", ""), "Address (BBB)": e.get("address", ""), "BBB": e.get("bbb", ""),
+            "Notes": "; ".join(n for n in notes if n),
+            "LSA proof: profile URL": b["profile_url"], "LSA proof: Google Ads customer ID": b["customer_id"]
+            + ("" if not b.get("other_customer_ids") else " (+" + ", ".join(b["other_customer_ids"]) + ")"),
             "LSA proof: listing URL": b["query_url"], "LSA proof: screenshot": b.get("evidence_png", ""),
             "First seen (UTC)": b["first_seen"], "Also listed for": "; ".join(sorted(set(b["queries"]))),
-            "LSA display phone (DO NOT CALL - tracking number)": b.get("lsa_display_phone", ""),
-            "Score": b["score"], "Franchise flag": "yes" if is_franchise(b["name"]) else "",
+            "LSA display phone (DO NOT CALL - tracking number)": b.get("lsa_display_phone", ""), "Score": b["score"],
+            "_reviews": int(b.get("reviews") or 0), "_owner_ok": bool(e.get("owner")) and bool(OWNER_TITLES.search(e.get("title", "") or "owner")),
+            "_24h": "24 hours" in (b.get("hours_status") or "").lower(), "_flagged": bool(b["flags"] and re.search(r"franchise|answering service|very large|not local", b["flags"])),
         }
-        rows.append(row)
+        kept.append(row)
         if ph:
             seen_phone[ph] = row
-    rows = rows[: a.top] if a.top else rows
+    return kept, removed
+
+
+def cmd_export(a):
+    out = Path(a.out)
+    kept, removed = build_rows(a)
+    total = a.top or 500
+    primary_n = min(a.primary, total)
+    rows = kept[:total]
     for i, r in enumerate(rows, 1):
-        r["Rank"] = i; r["Caller"] = (i - 1) % 3 + 1
+        r["Rank"] = i
+        r["List"] = "Primary" if i <= primary_n else "Backup"
+        r["Caller"] = (i - 1) % 3 + 1 if i <= primary_n else ""
+    # Top 50: strongest mix of LSA spend, missed-call exposure and reachable ownership
+    def top50_key(r):
+        k = r["Score"]
+        k += 6 if r["_owner_ok"] else -10
+        k += 4 if 150 <= r["_reviews"] <= 3000 else 0
+        k += 3 if r["_24h"] else 0
+        k -= 8 if r["_flagged"] else 0
+        k -= 6 if not r["Phone"] else 0
+        return -k
+    for r in sorted(rows, key=top50_key)[:50]:
+        r["Top 50"] = "yes"
     write_csv(out / "lsa_leads.csv", rows, COLS)
+    write_csv(out / "primary_300.csv", [r for r in rows if r["List"] == "Primary"], COLS)
+    write_csv(out / "backup_200.csv", [r for r in rows if r["List"] == "Backup"], COLS)
     for c in (1, 2, 3):
         write_csv(out / f"caller_{c}.csv", [r for r in rows if r["Caller"] == c], COLS)
-    with_phone = sum(1 for r in rows if r["Phone"])
-    with_owner = sum(1 for r in rows if r["Owner"])
-    # evidence sheet
+    write_csv(out / "top_50.csv", [r for r in rows if r["Top 50"]], COLS)
+    write_csv(out / "removed.csv", removed, REMOVED_COLS)
+    write_csv(out / "all_ranked.csv", kept, COLS)
     with open(out / "evidence.md", "w", encoding="utf-8") as f:
         f.write(f"# LSA advertiser evidence ({len(rows)} businesses, generated {now_iso()})\n\n")
         f.write("Every row was captured from google.com/localservices/prolist, the page that lists only paying Local Services Ads "
@@ -953,8 +1087,87 @@ def cmd_export(a):
             f.write(f"| {r['Rank']} | {r['Business']} | {r['Trade']} | {r['City']}, {r['State']} | {r['Google rating']} ({r['Review count']}) | "
                     f"{r['LSA proof: Google Ads customer ID']} | {r['First seen (UTC)']} | [{r['Also listed for'].split(';')[0]}]({r['LSA proof: listing URL']}) | "
                     f"[profile]({r['LSA proof: profile URL']}) |\n")
-    log(f"export: {len(rows)} advertisers ranked, {with_phone} with a verified business line, {with_owner} with an owner name "
-        f"-> {out / 'lsa_leads.csv'} (+ caller_1..3.csv, evidence.md)")
+    write_workbook(out / "lsa_leads.xlsx", rows, removed, kept)
+    with_phone = sum(1 for r in rows if r["Phone"]); with_owner = sum(1 for r in rows if r["Owner"])
+    log(f"export: {len(kept)} eligible after removing {len(removed)}; delivered {len(rows)} "
+        f"({sum(1 for r in rows if r['List'] == 'Primary')} primary / {sum(1 for r in rows if r['List'] == 'Backup')} backup, "
+        f"{with_phone} with phone, {with_owner} with owner) -> {out / 'lsa_leads.xlsx'} + CSVs")
+
+
+def write_workbook(path, rows, removed, kept):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    wb = Workbook()
+    font = Font(name="Arial", size=10); bold = Font(name="Arial", size=10, bold=True)
+    head_fill = PatternFill("solid", fgColor="DDEBF7"); warn_fill = PatternFill("solid", fgColor="FDE9D9")
+    widths = {"Business": 34, "Trade": 22, "City": 13, "Phone": 15, "Website": 30, "Owner": 20, "Title": 16, "Weekly hours": 40,
+              "Why this lead ranks highly": 60, "Red flags": 45, "Notes": 45, "Highlights": 30, "Also listed for": 40,
+              "LSA proof: profile URL": 30, "LSA proof: listing URL": 30, "Address (BBB)": 30, "Site signals": 26, "Owner source": 26}
+
+    def sheet(title, data, cols):
+        ws = wb.create_sheet(title[:31])
+        ws.append(cols)
+        for c in ws[1]:
+            c.font = bold; c.fill = head_fill; c.alignment = Alignment(vertical="top", wrap_text=True)
+        for r in data:
+            ws.append([r.get(c, "") for c in cols])
+        for i, c in enumerate(cols, 1):
+            ws.column_dimensions[get_column_letter(i)].width = widths.get(c, 12)
+        for row in ws.iter_rows(min_row=2):
+            for c in row:
+                c.font = font; c.alignment = Alignment(vertical="top", wrap_text=c.column_letter in "T U".split() or False)
+        if "LSA display phone (DO NOT CALL - tracking number)" in cols:
+            j = cols.index("LSA display phone (DO NOT CALL - tracking number)") + 1
+            for row in ws.iter_rows(min_row=1, min_col=j, max_col=j):
+                for c in row:
+                    c.fill = warn_fill
+        ws.freeze_panes = "F2" if "Business" in cols else "A2"
+        ws.auto_filter.ref = ws.dimensions
+        return ws
+
+    # README first
+    ws = wb.active; ws.title = "README"
+    lines = [
+        ("Google Local Services Ads advertiser call list", bold),
+        (f"Generated {now_iso()} by tools/lsa_leads/lsa_leads.py in the mowlid204.github.io repo.", font),
+        ("", font),
+        ("Tabs", bold),
+        ("Top 50: the 50 with the strongest mix of LSA spend, missed-call exposure and reachable ownership.", font),
+        ("Primary: ranks 1-300, the calling list. Caller 1 / 2 / 3: the Primary list split round-robin so nobody calls the same company.", font),
+        ("Backup: ranks 301-500. All ranked: every eligible advertiser found, best to worst. Removed: advertisers dropped and why.", font),
+        ("", font),
+        ("Columns to use on a call: Phone (the company's own line), Owner, Title, Why this lead ranks highly, Red flags, Hours.", font),
+        ("The column 'LSA display phone (DO NOT CALL - tracking number)' is the number inside the Google ad. Calling it bills the business for a lead. Evidence only.", bold),
+        ("Verification: every row was captured from google.com/localservices/prolist (paying LSA advertisers only). Proof columns give the listing URL, profile URL, Google Ads customer ID, capture time and screenshot file in tools/lsa_leads/out/evidence/.", font),
+        ("Phone source tells where the business line came from: BBB listing, the company website (tel: link or page text), or the BBB-built lists already in the repo.", font),
+        ("Ranking: independent, established, 150-3,000 reviews, owner still involved, 24-hour or late phones, verified website and phone score highest. Corporate chains, private-equity-owned and acquired companies are removed; franchises and 5,000+ review operations are kept but penalised.", font),
+    ]
+    for i, (t, f) in enumerate(lines, 1):
+        ws.cell(row=i, column=1, value=t).font = f
+    ws.column_dimensions["A"].width = 140
+    sheet("Top 50", [r for r in rows if r["Top 50"]], COLS)
+    sheet("Primary", [r for r in rows if r["List"] == "Primary"], COLS)
+    for c in (1, 2, 3):
+        sheet(f"Caller {c}", [r for r in rows if r["Caller"] == c], COLS)
+    sheet("Backup", [r for r in rows if r["List"] == "Backup"], COLS)
+    sheet("All ranked", kept, COLS)
+    sheet("Removed", removed, REMOVED_COLS)
+    # summary with live counts
+    ws = wb.create_sheet("Summary")
+    ws.append(["Metric", "Count"]); ws["A1"].font = bold; ws["B1"].font = bold
+    for i, (label, formula) in enumerate([
+        ("Delivered (Primary + Backup)", "=COUNTA(Primary!E:E)+COUNTA(Backup!E:E)-2"),
+        ("Primary", "=COUNTA(Primary!E:E)-1"), ("Backup", "=COUNTA(Backup!E:E)-1"),
+        ("Caller 1", "=COUNTA('Caller 1'!E:E)-1"), ("Caller 2", "=COUNTA('Caller 2'!E:E)-1"),
+        ("Caller 3", "=COUNTA('Caller 3'!E:E)-1"), ("Top 50", "=COUNTA('Top 50'!E:E)-1"),
+        ("Eligible advertisers found", "=COUNTA('All ranked'!E:E)-1"), ("Removed", "=COUNTA(Removed!A:A)-1"),
+        ("Primary rows with a phone", "=COUNTIF(Primary!I:I,\"?*\")"), ("Primary rows with an owner", "=COUNTIF(Primary!L:L,\"?*\")"),
+    ], 2):
+        ws.cell(row=i, column=1, value=label).font = font
+        ws.cell(row=i, column=2, value=formula).font = font
+    ws.column_dimensions["A"].width = 34
+    wb.save(path)
 
 
 def cmd_run(a):
@@ -968,10 +1181,13 @@ def main(argv=None):
     ap.add_argument("--cities", nargs="*", help="limit to these metro names, e.g. --cities Tulsa Omaha")
     ap.add_argument("--trades", nargs="*", help="limit to these trades: Roofing HVAC Plumbing Electrical")
     ap.add_argument("--limit", type=int, default=0, help="only the first N listing queries")
-    ap.add_argument("--top", type=int, default=0, help="profiles/enrich/export: only the top N by score (0 = all)")
+    ap.add_argument("--top", type=int, default=0, help="profiles/enrich: only the top N by score (0 = all); export: total delivered (default 500)")
+    ap.add_argument("--primary", type=int, default=300, help="export: how many of the delivered rows form the primary calling list")
     ap.add_argument("--wait", type=float, default=5.0, help="seconds between Google page loads (plus jitter)")
     ap.add_argument("--headed", action="store_true", help="show the browser window")
     ap.add_argument("--no-retry", action="store_true", help="enrich: do not retry businesses that still have no phone")
+    ap.add_argument("--shard", default="", help="enrich: write to enriched_<shard>.jsonl so several enrich runs can work in parallel")
+    ap.add_argument("--no-search", action="store_true", help="enrich: skip the web search fallback for websites (BBB + domain guess only)")
     a = ap.parse_args(argv)
     if a.top == 0 and a.cmd in ("profiles", "enrich"):
         a.top = 10000
