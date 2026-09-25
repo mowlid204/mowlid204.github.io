@@ -908,6 +908,15 @@ def cmd_fixsites(a):
     log(f"fixsites: {n} sites fetched")
 
 
+def hours_label(h):
+    """The ad's hours line as captured: 'Open 24 hours', 'Open · Closes 5 PM', or a bare '· 5 PM' when the
+    card only showed the closing time (rendered as 'Closes 5 PM')."""
+    h = (h or "").strip()
+    if h.startswith("·"):
+        return "Closes " + h.lstrip("· ").strip() + " (ad hours at capture)"
+    return h
+
+
 def read_enriched(out):
     """All enrichment rows across shards (enriched.jsonl, enriched_<shard>.jsonl); later rows win."""
     rows = {}
@@ -1109,7 +1118,7 @@ def build_rows(a):
             "City": b["primary_metro"], "State": b["state"], "Phone": e.get("phone", ""), "Phone source": e.get("phone_source", ""),
             "Website": e.get("website", ""), "Owner": e.get("owner", ""), "Title": e.get("title", ""),
             "Owner source": e.get("owner_source", ""), "Google rating": b.get("rating", ""), "Review count": b.get("reviews", 0),
-            "Years in business": b.get("years", ""), "Hours (ad status)": b.get("hours_status", ""), "Weekly hours": weekly,
+            "Years in business": b.get("years", ""), "Hours (ad status)": hours_label(b.get("hours_status", "")), "Weekly hours": weekly,
             "Why this lead ranks highly": b["why"], "Red flags": b["flags"], "Highlights": b.get("highlights", ""),
             "License": p.get("license", ""), "Ownership notes": " · ".join(p.get("ownership", [])),
             "Booking tool": urllib.parse.urlsplit(b.get("booking_url", "")).netloc if b.get("booking_url") else "",

@@ -43,6 +43,7 @@ Steps, each resumable (nothing already saved is fetched again):
 | `lists` | loads every listing query: 3 search terms per trade for the main city plus the primary term for 3 suburbs (24 pages per city, ~20 advertisers each; suburbs surface advertisers the city query does not) | `out/cards.jsonl`, `out/raw/`, `out/evidence/` |
 | `profiles` | opens the LSA profile of the top N advertisers for weekly hours, license number, "locally owned" style notes | `out/profiles.jsonl` |
 | `enrich` | website, real phone, owner: our BBB lists first, then the company website (home + about page), tech signals (call tracking, Google Ads tag, Housecall Pro, "24/7", "answering service") | `out/enriched.jsonl` |
+| `fixsites` | fetches the hand-verified websites named in `owner_overrides.csv` (`Website` column) for the business phone and tech signals when a row still has no phone | `out/enriched_zz_manual.jsonl` |
 | `export` | dedupes by Google Ads customer id and by phone, ranks, splits round-robin across 3 callers | `out/lsa_leads.csv`, `out/caller_1..3.csv`, `out/evidence.md` |
 
 Google shows a CAPTCHA page when it rate-limits a network. The script waits 10 minutes and retries
@@ -81,8 +82,12 @@ Enrichment can run in parallel per city: `enrich --cities Omaha --shard omaha` w
 
 Owners come from three places, in order: the BBB-built lists already in this repo (roofing), the
 company website's home and about pages, and `out/owner_overrides.csv`, a hand-verified file
-(`Business, City, Owner, Title, Source, Note, Adjust`) that wins over scraped values. `Adjust` is
-added to the score, which is how private-equity-owned or acquired companies get pushed down the
-list without being removed. BBB profile pages, the best owner source, sit behind a bot check on
+(`Business, City, Owner, Title, Source, Note, Adjust, Exclude, Website, Phone`) that wins over
+scraped values. `Adjust` is added to the score, which is how branch offices and multi-market
+operators get pushed down the list without being removed; `Exclude` removes the row with the reason
+shown on the Removed tab; `Website` and `Phone` are hand-verified values that replace whatever the
+scrape found (a website-sourced phone from a wrong site is dropped at the same time); `Owner` set
+to `-` clears a scraped owner guess when no owner name is published. The committed copy lives in
+`data/owner_overrides.csv` and is used when `out/owner_overrides.csv` does not exist. BBB profile pages, the best owner source, sit behind a bot check on
 cloud networks; from a home connection they open normally and `Business Management` on the profile
 is the name to take.
