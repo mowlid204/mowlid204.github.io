@@ -122,6 +122,9 @@ def site_matches(name, url, title, allow_domain=True):
         return bool(first2) and first2 in norm_name(title or "")
     if allow_domain and any(t in dom for t in toks):
         return True
+    if not allow_domain and not re.search(r"roof|plumb|electric|hvac|heat|air|cool|drain|sewer|contract|service|mechanical",
+                                          (title or "").lower()):
+        return False                                   # a guessed domain must at least look like a trade business
     tl = " " + re.sub(r"[^a-z0-9 ]", " ", (title or "").lower()) + " "
     return sum(1 for t in toks if f" {t} " in tl or t in tl.replace(" ", "")) >= min(2, len(toks))
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
